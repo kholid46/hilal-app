@@ -1,51 +1,78 @@
 import streamlit as st
-import subprocess
 import os
 from pathlib import Path
+import shutil
+import uuid
 from PIL import Image
+from yolov5 import detect
 
-st.title("🌓 Deteksi Hilal dengan YOLOv5")
-
-# Folder input/output
-UPLOAD_DIR = Path("uploads")
+# Konfigurasi direktori
+INPUT_DIR = Path("input")
 OUTPUT_DIR = Path("runs/detect")
-UPLOAD_DIR.mkdir(exist_ok=True)
-OUTPUT_DIR.mkdir(exist_ok=True)
+LABELS_DIR = OUTPUT_DIR / "labels"
+
+# Buat direktori jika belum ada
+INPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+LABELS_DIR.mkdir(parents=True, exist_ok=True)
+
+# Judul aplikasi
+st.set_page_config(page_title="Deteksi Hilal", layout="centered")
+st.title("🌙 Deteksi Hilal Otomatis dengan YOLOv5")
+st.write("Unggah gambar atau video hilal, dan model akan mendeteksi keberadaannya.")
 
 # Upload file
-uploaded_file = st.file_uploader("Unggah Gambar (.jpg, .png)", type=["jpg", "jpeg", "png"])
+uploaded_file = st.file_uploader("Unggah Gambar atau Video", type=["jpg", "jpeg", "png", "mp4", "mov", "avi"])
 
 if uploaded_file is not None:
-    file_path = UPLOAD_DIR / uploaded_file.name
-    with open(file_path, "wb") as f:
-        f.write(uploaded_file.read())
+    file_ext = uploaded_file.name.split('.')[-1]
+    unique_name = f"{uuid.uuid4()}.{file_ext}"
+    input_path = INPUT_DIR / unique_name
 
-    st.image(file_path, caption="Gambar Diupload", use_column_width=True)
+    # Simpan file yang diunggah
+    with open(input_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
 
-    # Jalankan deteksi YOLOv5 (subprocess ke detect.py)
-    st.info("🔍 Menjalankan deteksi hilal...")
-    result = subprocess.run([
-        "python", "yolov5/detect.py",
-        "--weights", "best.pt",
-        "--source", str(file_path),
-        "--save-txt",
-        "--save-conf"
-    ], capture_output=True, text=True)
+    # Jalankan deteksi YOLOv5
+    st.info("🔍 Mendeteksi hilal...")
+    detect.run(
+        weights="best.pt",
+        source=str(input_path),
+        conf_thres=0.25,
+        save_txt=True,
+        save_conf=True
+    )
 
-    # Cek hasil
-    latest_exp = sorted(OUTPUT_DIR.glob("exp*"), key=os.path.getmtime)[-1]
-    result_image_path = latest_exp / uploaded_file.name
+    # Cari direktori hasil terbaru
+    latest_exp_dir = max(OUTPUT_DIR.glob("exp*"), key=os.path.getmtime)
+    result_file = latest_exp_dir / uploaded_file.name
 
-    if result_image_path.exists():
-        st.success("✅ Deteksi selesai!")
-        st.image(str(result_image_path), caption="Hasil Deteksi", use_column_width=True)
+    # Tampilkan hasil gambar/video
+    if result_file.exists():
+        if result_file.suffix.lower() in [".jpg", ".jpeg", ".png"]:
+            st.image(str(result_file), caption="Hasil Deteksi", use_column_width=True)
+        elif result_file.suffix.lower() in [".mp4", ".mov", ".avi"]:
+            st.video(str(result_file))
 
-        with open(result_image_path, "rb") as f:
-            st.download_button("📥 Unduh Gambar Hasil", f, file_name=uploaded_file.name)
+        # Unduh hasil
+        with open(result_file, "rb") as f:
+            st.download_button(
+                label="📥 Unduh Hasil Deteksi",
+                data=f,
+                file_name=uploaded_file.name,
+                mime="application/octet-stream"
+            )
 
-        labels_path = latest_exp / "labels" / uploaded_file.name.replace(".jpg", ".txt").replace(".png", ".txt")
-        if not labels_path.exists():
-            st.warning("⚠️ Hilal tidak terdeteksi.")
+        # Cek apakah ada label hilal (output YOLO)
+        label_file = latest_exp_dir / "labels" / uploaded_file.name.replace(f".{file_ext}", ".txt")
+        if not label_file.exists():
+            st.warning("⚠️ Hilal tidak terdeteksi dalam file ini.")
+        else:
+            st.success("✅ Hilal berhasil terdeteksi!")
+
     else:
-        st.error("❌ Gagal mendeteksi hilal.")
-        st.code(result.stderr)
+        st.error("❌ Gagal menampilkan hasil deteksi.")
+
+    # Bersihkan input
+    input_path.unlink(missing_ok=True)
+
