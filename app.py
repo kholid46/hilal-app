@@ -1,24 +1,35 @@
 import streamlit as st
 import os
 from pathlib import Path
-import shutil
 import uuid
 from PIL import Image
-from detect_custom import run_detection
+import torch
+import sys
+
+# Menambahkan path YOLOv5 ke sys.path
+sys.path.append(str(Path(__file__).resolve().parent / 'yolov5'))
+
+from models.experimental import attempt_load
+from utils.general import non_max_suppression, scale_coords
+from utils.torch_utils import select_device
+from utils.datasets import letterbox
 
 # Konfigurasi direktori
 INPUT_DIR = Path("input")
 OUTPUT_DIR = Path("runs/detect")
+LABELS_DIR = OUTPUT_DIR / "labels"
 
-INPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# Buat direktori jika belum ada
+for dir in [INPUT_DIR, OUTPUT_DIR, LABELS_DIR]:
+    dir.mkdir(parents=True, exist_ok=True)
 
 # Judul aplikasi
 st.set_page_config(page_title="Deteksi Hilal", layout="centered")
 st.title("🌙 Deteksi Hilal Otomatis dengan YOLOv5")
+st.write("Unggah gambar hilal, dan model akan mendeteksi keberadaannya.")
 
 # Upload file
-uploaded_file = st.file_uploader("Unggah Gambar atau Video", type=["jpg", "jpeg", "png", "mp4", "mov", "avi"])
+uploaded_file = st.file_uploader("Unggah Gambar", type=["jpg", "jpeg", "png"])
 
 if uploaded_file is not None:
     file_ext = uploaded_file.name.split('.')[-1]
@@ -29,32 +40,35 @@ if uploaded_file is not None:
     with open(input_path, "wb") as f:
         f.write(uploaded_file.getbuffer())
 
-    st.info("🔍 Mendeteksi hilal...")
+    # Load model
+    device = select_device('')
+    model = attempt_load('best.pt', map_location=device)
+    model.eval()
 
-    # Jalankan deteksi
-    run_detection(weights="best.pt", source=str(input_path), conf=0.25)
+    # Baca gambar
+    img = Image.open(input_path)
+    img = letterbox(img, 640, stride=32, auto=True)[0]  # Resize
+    img = torch.from_numpy(img).to(device)
+    img = img.float() / 255.0  # Normalize
+    if img.ndimension() == 3:
+        img = img.unsqueeze(0)
 
-    # Ambil folder hasil terbaru
-    latest_exp_dir = max(OUTPUT_DIR.glob("exp*"), key=os.path.getmtime)
-    result_file = latest_exp_dir / uploaded_file.name
+    # Inferensi
+    pred = model(img)[0]
+    pred = non_max_suppression(pred, 0.25, 0.45, classes=None, agnostic=False)
 
-    # Tampilkan hasil
-    if result_file.exists():
-        if result_file.suffix.lower() in [".jpg", ".jpeg", ".png"]:
-            st.image(str(result_file), caption="Hasil Deteksi", use_column_width=True)
-        elif result_file.suffix.lower() in [".mp4", ".mov", ".avi"]:
-            st.video(str(result_file))
-
-        with open(result_file, "rb") as f:
-            st.download_button("📥 Unduh Hasil Deteksi", data=f, file_name=uploaded_file.name)
-
-        # Cek label
-        label_file = latest_exp_dir / "labels" / uploaded_file.name.replace(f".{file_ext}", ".txt")
-        if not label_file.exists():
-            st.warning("⚠️ Hilal tidak terdeteksi.")
+    # Proses hasil
+    for det in pred:
+        if len(det):
+            det[:, :4] = scale_coords(img.shape[2:], det[:, :4], img.size).round()
+            for *xyxy, conf, cls in reversed(det):
+                label = f'{model.names[int(cls)]} {conf:.2f}'
+                st.write(f"Deteksi: {label}")
         else:
-            st.success("✅ Hilal berhasil terdeteksi!")
-    else:
-        st.error("❌ Gagal menampilkan hasil deteksi.")
+            st.warning("⚠️ Hilal tidak terdeteksi dalam gambar ini.")
 
-    input_path.unlink(missing_ok=True)
+    # Tampilkan gambar asli
+    st.image(input_path, caption="Gambar yang diunggah", use_column_width=True)
+
+    # Bersihkan file yang diunggah
+    input_path.unlink()
