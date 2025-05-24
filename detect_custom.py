@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 # Pastikan path YOLOv5 ditambahkan
-FILE = Path(__file__).resolve()
+FILE = Path(yolov5).resolve()
 ROOT = FILE.parent / "yolov5"
 sys.path.append(str(ROOT))
 
