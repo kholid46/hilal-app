@@ -1,11 +1,9 @@
-# detect_custom.py
 import sys
 from pathlib import Path
 
-# Pastikan path YOLOv5 ditambahkan
-FILE = Path(yolov5).resolve()
-ROOT = FILE.parent / "yolov5"
-sys.path.append(str(ROOT))
+# Misal YOLOv5 ada di subfolder 'yolov5'
+yolov5_path = Path(__file__).parent / "yolov5"
+sys.path.append(str(yolov5_path.resolve()))
 
 from yolov5.detect import run as detect_run
 
