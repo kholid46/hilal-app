@@ -1,3 +1,17 @@
+import streamlit as st
+import torch
+import pandas as pd
+from PIL import Image
+import tempfile
+import os
+from detect_custom import run_detection
+
+st.title("🌓 Deteksi Hilal Otomatis")
+st.markdown("Upload gambar atau video untuk mendeteksi hilal menggunakan model YOLOv5.")
+
+# ⛳️ Inisialisasi variabel sebelum digunakan
+uploaded_file = st.file_uploader("Unggah gambar atau video", type=["jpg", "jpeg", "png", "mp4"])
+
 if uploaded_file is not None:
     with tempfile.NamedTemporaryFile(delete=False) as temp_file:
         temp_file.write(uploaded_file.read())
