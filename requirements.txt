@@ -1,9 +1,5 @@
 streamlit
 torch
-torchvision
-opencv-python
-pillow
-numpy
-PyYAML
-matplotlib
 pandas
+opencv-python-headless
+Pillow
