@@ -1,11 +1,34 @@
-import sys
+import torch
+import pandas as pd
 from pathlib import Path
+import os
+from PIL import Image
 
-# Misal YOLOv5 ada di subfolder 'yolov5'
-yolov5_path = Path(__file__).parent / "yolov5"
-sys.path.append(str(yolov5_path.resolve()))
+def run_detection(source_path):
+    weights = "best.pt"
+    model = torch.hub.load("ultralytics/yolov5", "custom", path=weights, force_reload=True)
+    model.conf = 0.25
+    results = model(source_path)
+    results.save()
 
-from yolov5.detect import run as detect_run
+    out_path = list(Path("runs/detect").glob("exp*/"))[-1]
+    result_img = list(out_path.glob("*.jpg"))[0] if list(out_path.glob("*.jpg")) else None
 
-def run_detection(weights, source, conf=0.25):
-    detect_run(weights=weights, source=source, conf_thres=conf, save_txt=True, save_conf=True)
+    data = []
+    for i, pred in enumerate(results.pred):
+        if pred is not None and len(pred):
+            for *box, conf, cls in pred.tolist():
+                data.append({
+                    "label": model.names[int(cls)],
+                    "confidence": round(conf, 3),
+                    "xmin": round(box[0]),
+                    "ymin": round(box[1]),
+                    "xmax": round(box[2]),
+                    "ymax": round(box[3]),
+                })
+
+    df = pd.DataFrame(data)
+    csv_path = out_path / "hasil_deteksi.csv"
+    df.to_csv(csv_path, index=False)
+
+    return str(result_img), str(csv_path), df
